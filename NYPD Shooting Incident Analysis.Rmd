@@ -1,0 +1,204 @@
+---
+title: "NYPD Shooting Incident Data"
+author: "Catherine Haynes"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Import libraries
+
+``` {r, echo=TRUE}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+```
+
+### Import the NYPD Shooting Incident Data
+
+``` {r, echo=TRUE}
+NYPD_url <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+NYPD <- read_csv(NYPD_url)
+```
+
+### Preview the data
+``` {r, echo=TRUE}
+# NYPD
+```
+
+### Summarize The Data
+
+``` {r, echo=TRUE}
+summary(NYPD)
+colnames(NYPD)
+```
+
+### Clean Up Data Types & Unneeded Columns For Analysis
+
+``` {r, echo=TRUE}
+NYPD$OCCUR_DATE <- as.Date(NYPD$OCCUR_DATE, format = "%m/%d/%Y")
+NYPD$PERP_AGE_GROUP <- as.factor(NYPD$PERP_AGE_GROUP)
+NYPD$PERP_SEX <- as.factor(NYPD$PERP_SEX)
+NYPD$PERP_RACE <- as.factor(NYPD$PERP_RACE)
+NYPD$VIC_AGE_GROUP <- as.factor(NYPD$VIC_AGE_GROUP)
+NYPD$VIC_SEX <- as.factor(NYPD$VIC_SEX)
+NYPD$VIC_RACE <- as.factor(NYPD$VIC_RACE)
+NYPD$INCIDENT_KEY <- as.character((NYPD$INCIDENT_KEY))
+NYPD$BORO <- as.factor(NYPD$BORO)
+NYPD$LOC_OF_OCCUR_DESC <- as.factor(NYPD$LOC_OF_OCCUR_DESC)
+NYPD$PRECINCT <- as.character(NYPD$PRECINCT)
+NYPD$JURISDICTION_CODE <- as.character(NYPD$JURISDICTION_CODE)
+
+NYPD <- NYPD %>%
+  select(-X_COORD_CD, -Y_COORD_CD, -Latitude, -Longitude, -Lon_Lat)
+
+NYPD
+```
+```{r, echo=TRUE}
+summary(NYPD)
+```
+
+### Total Incidents and Deaths per Year
+
+The following table and graph show how the number of incidents and statistical murders have changed over the years. Please note date ranges from 1-1-2006 to 12-29-2023.
+
+```{r, echo=TRUE}
+totals_by_year <- NYPD %>%
+  mutate(Year = format(OCCUR_DATE, "%Y")) %>%
+  group_by(Year) %>%
+  summarize(
+    incidents = n(),
+    murders = sum(STATISTICAL_MURDER_FLAG)
+  ) %>%
+  select(Year, incidents, murders)
+
+totals_by_year
+```
+
+
+```{r, echo=TRUE}
+totals_by_year$Year <- as.numeric(totals_by_year$Year)
+ggplot(data = totals_by_year) +
+  geom_line(aes(x= Year, y = incidents, color = 'Incidents')) +
+  geom_line(aes(x= Year, y = murders, color = 'Murders')) +
+  scale_color_manual(values = c('Incidents' = 'blue', 'Murders' = 'orange'))
+```
+
+### Total Indicidents by Borough in 2023
+
+The following table and graph show the total incidents in 2023, separated by the NYC borough that they occurred in.
+
+```{r, echo=TRUE}
+totals_by_boro <- NYPD %>%
+  filter(format(OCCUR_DATE, "%Y") == "2023") %>%
+  group_by(BORO) %>%
+  summarize(
+    incidents = n(),
+    murders = sum(STATISTICAL_MURDER_FLAG)
+  ) %>%
+  select(BORO, incidents, murders)
+
+totals_by_boro
+```
+
+```{r, echo=TRUE}
+ggplot(data = totals_by_boro) +
+  geom_bar(aes(x= interaction(BORO), y = incidents), stat = "identity", fill = 'blue') +
+  geom_bar(aes(x= interaction(BORO), y = murders), stat = "identity", fill = 'orange') +
+  labs(x= "Borough",
+       y = "Count")
+```
+
+### Analysis - Incidents as a Ratio of the population in Each Borough in 2023
+
+To understand the prevalence of these incidents in each borough, we need to understand the population differences between boroughs. Below, we show the ratio of number of incidents per thousand people for the year 2023. Population estimates are from July 2023.
+
+Looking at total incidents, the Bronx had only 26 more incidents that Brooklyn in 2023. But when we look at incidents per hundred thousand, we see that the Bronx had significantly more incidents. For every hundred thousand people in population, the Bronx had 32 incidents, where Brooklyn had 16.
+
+Population data retrieved from: https://www.nyc.gov/assets/planning/download/pdf/planning-level/nyc-population/population-estimates/current-population-estimates-2023-June2024-release.pdf?r=1
+
+```{r, echo=TRUE}
+
+pop_by_boro <- data.frame(
+  BORO = c("MANHATTAN", "BROOKLYN", "QUEENS", "BRONX", "STATEN ISLAND"),
+  Population_2023 = c(1597451, 2561225, 2252196, 1356476, 490687)
+)
+
+ratio_by_boro <- NYPD %>%
+  filter(format(OCCUR_DATE, "%Y") == "2023") %>%
+  group_by(BORO) %>%
+  summarize(
+    incidents = n(),
+    murders = sum(STATISTICAL_MURDER_FLAG)
+  ) %>%
+  left_join(pop_by_boro, by = "BORO") %>%
+  mutate(
+    incidents_per_hunthousand = (incidents / Population_2023) * 100000,
+    murders_per_hunthousand = (murders / Population_2023) * 100000
+  ) %>%
+  select(BORO, incidents, murders, Population_2023, incidents_per_hunthousand, murders_per_hunthousand)
+
+ratio_by_boro
+```
+``` {r, echo=TRUE}
+ggplot(data = ratio_by_boro) +
+  geom_bar(aes(x= BORO, y = incidents_per_hunthousand), stat = "identity", fill = 'blue') +
+  geom_bar(aes(x= BORO, y = murders_per_hunthousand), stat = "identity", fill = 'orange') +
+  labs(x= "Borough",
+       y = "Incidents and Murders per Hundred Thousand")
+```
+
+### Model - Murders per hundred thousand as function of Incidents per Hundred Thousand
+
+The analysis reveals a statistically significant relationship between incidents and murders, suggesting that the number of incidents per hundred thousand serves as a strong predictor for estimating murders per hundred thousand.
+
+``` {r, echo = TRUE}
+mod <- lm(ratio_by_boro$murders_per_hunthousand ~ ratio_by_boro$incidents_per_hunthousand)
+summary(mod)
+
+ratio_by_boro_w_pred <- ratio_by_boro %>% mutate(pred=predict(mod))
+ratio_by_boro_w_pred
+
+ratio_by_boro_w_pred %>% ggplot() + 
+  geom_point(aes(x = incidents_per_hunthousand, y = murders_per_hunthousand, color = 'Actual Murders')) +
+  geom_point(aes(x = incidents_per_hunthousand, y=pred, color = 'Predicted Murders')) +
+  scale_color_manual(values = c('Actual Murders' = 'red', 'Predicted Murders'= 'darkgreen'))
+```
+
+
+### Total Incidents by Hour of the Day
+
+The following table and graph give us an idea of what time of day incidents are most likely to occur. Incidents are lowest in the morning and then continue to increase for every hour of the rest of the day. Incidents then begin to decrease again after midnight.
+
+```{r, echo=TRUE}
+total_by_hour <- NYPD %>%
+  mutate(Hour = substr(as.character(NYPD$OCCUR_TIME), 1, 2)) %>%
+  group_by(Hour) %>%
+  summarize(
+    incidents = n(),
+    murders = sum(STATISTICAL_MURDER_FLAG)
+  ) %>%
+  select(Hour, incidents, murders)
+
+total_by_hour
+```
+
+
+```{r, echo=TRUE}
+total_by_hour$Hour <- as.numeric(total_by_hour$Hour)
+ggplot(data = total_by_hour) +
+  geom_line(aes(x= Hour, y = incidents, color = 'Incidents')) +
+  geom_line(aes(x= Hour, y = murders, color = 'Murders')) +
+  scale_color_manual(values = c('Incidents'='blue', 'Murders'='orange'))
+```
+
+### Conclusion and Bias
+
+Reported shooting incidents in New York City decreased from 2006 to 2019. In 2020, reported incidents increased significantly, with a slight drop for every year after. When we look at the subset of incidents by borough in 2023, we find that the Bronx only had 26 more incidents than brooklyn, but when we look at that as a ratio of the total population of those boroughs we see that the Bronx had an incident rate of 32 incidents per hundred thousand people compared to Brooklyn's 16 incidents per hundred thousand. Lastly, we find that there is a trend in when these incidents are occurring throughout the day. Incidents peak in 11PM hour, falling every hour until mid morning (7AM-9AM) when they are at their lowest. Incidents then begin to rise again as the day continues.
+
+Because this is open source data, the likelihood for personal bias is low. However, there is still potential for bias to be present in the collection of data and in the analysis. The data set only includes shooting incidents that were reported to or by the NYPD. It is possible that there are shooting incidents that were not recorded but occured and would potentially change the analysis outcomes. In regards to personal bias, when I was analyzing the change of incidents over time, I had preconceived assumptions that incidents would rise in 2020. In order to mitigate my assumptions and bias, I reported on all data present and did nothing to remove data that did not fit my assumptions. I let the data speak for its own trends and didn't try to prove my assumptions correct.
